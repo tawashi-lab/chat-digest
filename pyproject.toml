@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chat-digest"
+version = "0.1.0"
+description = "LLM-powered topic digest bot: summarizes Discord/Telegram chat channels by topic and posts the digest via Discord webhooks"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "tanaka" }]
+keywords = ["discord", "telegram", "summarization", "llm", "litellm"]
+dependencies = [
+    "litellm>=1.40",
+    "openai>=1.30",
+    "google-genai>=1.0",
+    "pandas>=2.0",
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "matplotlib>=3.8",
+    "matplotlib-fontja>=1.0",
+    "requests>=2.31",
+    "bleach>=6.0",
+    "pydantic>=2.5",
+    "PyYAML>=6.0",
+    "python-dotenv>=1.0",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+# 公式 Bot API での履歴取得(推奨)
+discord = ["discord.py>=2.3"]
+# セルフボットでの履歴取得。Discord 利用規約違反の手法であり自己責任。
+# discord.py と同じ `discord` 名前空間を使うため、discord extra とは同時にインストールできない。
+selfbot = ["discord.py-self>=2.0"]
+telegram = ["Telethon>=1.34"]
+# Grok によるトピック補足情報取得・ファクトチェック
+grok = ["xai-sdk>=1.0"]
+dev = ["pytest>=8.0", "ruff>=0.4"]
+
+[project.scripts]
+chat-digest = "chat_digest.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"chat_digest.prompts" = ["*.yaml"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

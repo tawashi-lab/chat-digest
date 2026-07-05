@@ -1,0 +1,65 @@
+# chat-digest 設定サンプル / Example configuration
+#
+# コピーして config.yaml を作成し、自分のサーバー情報に書き換えてください。
+# Copy this file to config.yaml and fill in your own server details.
+# シークレット(トークン・Webhook URL・API キー)は YAML に直接書かず、
+# .env の環境変数名で参照します。 / Secrets are referenced by env var name (see .env.example).
+
+# ローカルプロンプトプロファイルの検索ディレクトリ(この config からの相対パス)。
+# 省略時はパッケージ同梱のプロファイル(crypto / stocks / casual / ai / crypto_airdrop)のみ。
+# prompt_dirs:
+#   - prompts.local
+
+log_dir: logs
+
+sources:
+  myserver:
+    # discord_bot: 公式 Bot API(推奨。サーバーに Bot を招待し、message content intent を有効化)
+    # discord_selfbot: ユーザートークンで読み取り(Discord 利用規約違反・自己責任、extras: selfbot)
+    # telegram: Telethon(extras: telegram)
+    type: discord_bot
+    token_env: DISCORD_TOKEN_MYSERVER
+    server_id: 123456789012345678
+    channels:
+      general: 123456789012345678
+
+  # mytelegram:
+  #   type: telegram
+  #   channels:
+  #     main: SomeTelegramChannelName
+
+outputs:
+  myserver-summary:
+    url_env: WEBHOOK_MYSERVER_SUMMARY
+
+# LLM モデルはステップごとに上書き可能(既定値は config.py の ModelSettings を参照)
+# llm:
+#   models:
+#     topic_judge: gemini-3-flash-preview
+#     topic_summary: gpt-5.5-hl
+
+jobs:
+  general-24h:
+    source: myserver
+    channel: general
+    title: 雑談1日まとめ
+    hours: 24
+    # 前処理後のメッセージ数がこの値以下ならスキップ
+    cutoff_num: 100
+    # 同梱プロファイル: crypto / stocks / casual / ai / crypto_airdrop
+    prompt_profile: casual
+    topics:
+      base_num: 2          # 最低トピック数
+      max_num: 4           # 最大トピック数
+      denominator: 150     # メッセージ数からトピック数を決める係数(大きいほど少なめ)
+      cut_others: true     # 「その他」トピックを出力から除外
+    features:
+      graph: false                     # トピック推移グラフ画像を添付
+      condense: { enabled: true }      # 要約を約200字に短縮
+      highlight: true                  # 全体の50字ヘッドラインを生成
+      references: true                 # 要約内に元チャットへのリンクを埋め込む
+      topic_context: false             # Grok 検索でトピック補足情報を取得(要 GROK_API_KEY)
+      fact_check: { enabled: false }   # Grok 検索によるファクトチェック(要 GROK_API_KEY)
+    post_to: [myserver-summary]
+    # ヘッドラインのみの簡易版を別 Webhook にも投稿する場合
+    # simple_post_to: [another-output]

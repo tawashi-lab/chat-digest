@@ -1,0 +1,11 @@
+.env
+config/config.yaml
+config/prompts.local/
+logs/
+*.log
+*.session
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
