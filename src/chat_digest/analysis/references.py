@@ -6,16 +6,14 @@
 
 import concurrent.futures
 import copy
-import os
 import re
 import time
 
 import numpy as np
-import openai
 import pandas as pd
 
 from chat_digest.analysis.topics import call_llm_with_parse_retry, validate_string_list
-from chat_digest.llm.client import call_llm
+from chat_digest.llm.client import call_llm, create_embeddings
 from chat_digest.sources.base import UrlContext
 
 
@@ -48,32 +46,13 @@ def split_summary(summary_text, full_split=False):
     return summary_segments
 
 
-def _openai_api_key() -> str:
-    api_key = os.getenv("OPENAI_API_KEY", "")
-    if not api_key:
-        raise RuntimeError("OPENAI_API_KEY is required for embedding-based references")
-    return api_key
-
-
-def create_embedding(model, api_key, inputs):
-    client = openai.Client(api_key=api_key)
-    response = client.embeddings.create(
-        input=inputs,
-        model=model,
-    )
-    embeddings = pd.DataFrame(response.data)[0].tolist()
-    embeddings = [embedding[1] for embedding in embeddings]
-    return embeddings
-
-
 def add_embedding_to_df(chat_df, model):
     chat_df = chat_df.copy()
     chat_df = chat_df.dropna(subset=['integrated_content'])
     content_list = chat_df['integrated_content'].tolist()
     content_list = [content if content else "空っぽ" for content in content_list]
 
-    embeddings = create_embedding(model, _openai_api_key(), content_list)
-    chat_df['embedding'] = embeddings
+    chat_df['embedding'] = create_embeddings(model, content_list)
     return chat_df
 
 
@@ -128,7 +107,7 @@ def _process_topic(
 
     similar_chats = []
     for featured_split_summary in featured_split:
-        query_embedding = create_embedding(emb_model, _openai_api_key(), [featured_split_summary])
+        query_embedding = create_embeddings(emb_model, [featured_split_summary])
         cos_sim = id_df["embedding"].apply(lambda x: cosine_similarity(query_embedding[0], x))
         top_index = cos_sim.sort_values(ascending=False).index[:6]
         similar_chats.append(id_df.loc[top_index, "integrated_content"])
@@ -172,7 +151,7 @@ def add_summary_reference(
     prompt_dict: dict,
     extract_phrases_model: str,
     judge_reference_model: str,
-    emb_model: str = "text-embedding-3-large",
+    emb_model: str = "gemini-embedding-2",
 ) -> list:
     """各トピック要約に参照リンクを並列で付与する。失敗したトピックは元の要約のまま。"""
     topic_list_addsonota = copy.copy(topic_list)

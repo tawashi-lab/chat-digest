@@ -27,7 +27,7 @@ class ModelSettings(BaseModel):
     fact_check_item: str = "gpt-5.5-hm"
     fact_check_rewrite: str = "gpt-5.5-hm"
     grok: str = "grok-4-fast-reasoning"
-    embedding: str = "text-embedding-3-large"
+    embedding: str = "gemini-embedding-2"
     extract_phrases: str = "gpt-5.4-hl"
     judge_reference: str = "gpt-5.4-hl"
 

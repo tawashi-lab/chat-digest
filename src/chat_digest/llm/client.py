@@ -248,6 +248,50 @@ def count_gemini_tokens(model: str, text: str) -> int:
         raise LLMCallError(f"Gemini token count response had invalid total_tokens: {total_tokens!r}") from exc
 
 
+# Gemini の embed_content は1リクエストあたりの入力数に上限があるため分割する
+_GEMINI_EMBED_BATCH_SIZE = 100
+
+
+def create_embeddings(model: str, inputs: list[str]) -> list[list[float]]:
+    """テキストのリストを embedding ベクトルのリストに変換する(OpenAI / Gemini 対応)。"""
+    if not inputs:
+        return []
+
+    resolved_model = resolve_model(model)
+    _require_api_key(resolved_model.provider)
+
+    try:
+        if resolved_model.provider == "gemini":
+            genai = _load_google_genai()
+            client = genai.Client(api_key=os.getenv(_PROVIDER_ENV_VARS["gemini"]))
+            embeddings: list[list[float]] = []
+            for start in range(0, len(inputs), _GEMINI_EMBED_BATCH_SIZE):
+                batch = inputs[start:start + _GEMINI_EMBED_BATCH_SIZE]
+                response = client.models.embed_content(
+                    model=resolved_model.model_name,
+                    contents=batch,
+                )
+                embeddings.extend(list(item.values) for item in response.embeddings)
+            return embeddings
+
+        if resolved_model.provider == "openai":
+            import openai
+
+            client = openai.Client(api_key=os.getenv(_PROVIDER_ENV_VARS["openai"]))
+            response = client.embeddings.create(input=inputs, model=resolved_model.model_name)
+            return [item.embedding for item in response.data]
+    except LLMCallError:
+        raise
+    except Exception as exc:
+        raise LLMCallError(
+            f"Embedding request failed for '{resolved_model.request_model}': {exc}"
+        ) from exc
+
+    raise LLMCallError(
+        f"Embeddings are not supported for provider '{resolved_model.provider}'."
+    )
+
+
 def _load_google_genai() -> Any:
     try:
         from google import genai
@@ -268,7 +312,7 @@ def _split_provider(model: str) -> tuple[str, str]:
             raise LLMCallError("Model name is required.")
         return provider, model_name
 
-    if model.startswith(("gpt-", "o1", "o3", "o4")):
+    if model.startswith(("gpt-", "o1", "o3", "o4", "text-embedding-")):
         return "openai", model
     if model.startswith("claude-"):
         return "anthropic", model

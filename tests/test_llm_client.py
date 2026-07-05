@@ -152,5 +152,62 @@ class LiteLLMRequestKwargsTest(unittest.TestCase):
                 count_gemini_tokens("gemini-3-flash-preview", "cacheable text")
 
 
+
+
+class CreateEmbeddingsTest(unittest.TestCase):
+    def _fake_genai(self, dim=4):
+        calls = []
+
+        class FakeClient:
+            def __init__(self, api_key):
+                self.api_key = api_key
+                self.models = SimpleNamespace(embed_content=self._embed)
+
+            def _embed(self, model, contents):
+                calls.append((model, list(contents)))
+                return SimpleNamespace(
+                    embeddings=[SimpleNamespace(values=[float(i)] * dim) for i, _ in enumerate(contents)]
+                )
+
+        return SimpleNamespace(Client=FakeClient), calls
+
+    def test_gemini_embeddings_resolved_and_returned(self):
+        from chat_digest.llm.client import create_embeddings
+
+        fake_genai, calls = self._fake_genai()
+        with patch("chat_digest.llm.client._load_google_genai", return_value=fake_genai), patch.dict(
+            os.environ, {"GEMINI_API_KEY": "test-key"}
+        ):
+            vecs = create_embeddings("gemini-embedding-2", ["a", "b"])
+
+        self.assertEqual(len(vecs), 2)
+        self.assertEqual(calls[0][0], "gemini-embedding-2")
+        self.assertEqual(calls[0][1], ["a", "b"])
+
+    def test_gemini_embeddings_batched_over_limit(self):
+        from chat_digest.llm.client import _GEMINI_EMBED_BATCH_SIZE, create_embeddings
+
+        fake_genai, calls = self._fake_genai()
+        inputs = [f"text{i}" for i in range(_GEMINI_EMBED_BATCH_SIZE + 5)]
+        with patch("chat_digest.llm.client._load_google_genai", return_value=fake_genai), patch.dict(
+            os.environ, {"GEMINI_API_KEY": "test-key"}
+        ):
+            vecs = create_embeddings("gemini-embedding-2", inputs)
+
+        self.assertEqual(len(vecs), len(inputs))
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(len(calls[0][1]), _GEMINI_EMBED_BATCH_SIZE)
+        self.assertEqual(len(calls[1][1]), 5)
+
+    def test_openai_embedding_model_resolves_to_openai_provider(self):
+        resolved = resolve_model("text-embedding-3-large")
+        self.assertEqual(resolved.provider, "openai")
+
+    def test_empty_inputs_short_circuit(self):
+        from chat_digest.llm.client import create_embeddings
+
+        self.assertEqual(create_embeddings("gemini-embedding-2", []), [])
+
+
 if __name__ == "__main__":
     unittest.main()
