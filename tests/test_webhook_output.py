@@ -4,7 +4,9 @@ import unittest
 import pandas as pd
 
 from chat_digest.output.webhook import (
+    EMBED_TOTAL_CHAR_LIMIT,
     FIELD_CHAR_LIMIT,
+    fit_fields_to_embed_limit,
     make_embed_payload,
     make_summary_dicts,
     split_summary_text,
@@ -124,6 +126,58 @@ class SimpleFieldsTest(unittest.TestCase):
         self.assertEqual(fields[1]["name"], "トピック")
         self.assertEqual(fields[1]["value"], "- B (60%)\n- A (10%)")
         self.assertEqual(fields[2]["name"], "本編リンク")
+
+
+class EmbedTotalLimitTest(unittest.TestCase):
+    def _payload_total(self, payload):
+        data = json.loads(payload["payload_json"])
+        embed = data["embeds"][0]
+        footer = embed.get("footer", {}).get("text", "")
+        return embed, len(embed["title"]) + len(footer) + sum(
+            len(f["name"]) + len(f["value"]) for f in embed["fields"]
+        )
+
+    def _summaries(self, n_topics, desc_len):
+        return [
+            {
+                "title": f"Topic {i}: {90 - i}%",
+                "description": "あ" * desc_len,
+                "description_parts": split_summary_text("あ" * desc_len),
+                "urls": [],
+                "percentage": 90 - i,
+            }
+            for i in range(n_topics)
+        ]
+
+    def test_within_limit_untouched(self):
+        payload = make_embed_payload(
+            self._summaries(2, 500), "タイトル", "", description_off=False, url_off=False
+        )
+        embed, total = self._payload_total(payload)
+        self.assertLessEqual(total, EMBED_TOTAL_CHAR_LIMIT)
+        self.assertNotIn("…", json.dumps(embed, ensure_ascii=False))
+
+    def test_over_limit_trimmed_from_tail(self):
+        payload = make_embed_payload(
+            self._summaries(4, 2500), "タイトル", "", description_off=False, url_off=False,
+            footer="フッター",
+        )
+        embed, total = self._payload_total(payload)
+        self.assertLessEqual(total, EMBED_TOTAL_CHAR_LIMIT)
+        # 先頭(重要度最大)のトピックは無傷で残る
+        self.assertTrue(embed["fields"][0]["name"].startswith("Topic 0"))
+        self.assertNotIn("…", embed["fields"][0]["value"])
+        # どこかに短縮の目印がある
+        self.assertIn("…", json.dumps(embed, ensure_ascii=False))
+
+    def test_fit_fields_removes_tiny_tail_field(self):
+        fields = [
+            {"name": "A", "value": "x" * 100},
+            {"name": "B", "value": "y" * 30},
+        ]
+        fitted = fit_fields_to_embed_limit(fields, base_length=0, limit=105)
+        self.assertEqual(len(fitted), 1)
+        self.assertLessEqual(len(fitted[0]["name"]) + len(fitted[0]["value"]), 105)
 
 
 if __name__ == "__main__":

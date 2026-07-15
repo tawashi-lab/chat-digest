@@ -13,6 +13,10 @@ import pandas as pd
 import requests
 
 FIELD_CHAR_LIMIT = 900  # Discord Embed field is max 1024 chars, keep headroom for prefixes/URLs
+# Discord は Embed 全体(title + footer + 全 field の name/value)で 6000 字が上限。
+# 超えると投稿自体が 400 で失敗するため、余裕をみた上限に収まるよう末尾から削る。
+EMBED_TOTAL_CHAR_LIMIT = 5800
+_TRUNCATION_MARK = "…\n"
 LINK_PATTERN = re.compile(r"\[[^\]]+\]\([^)]+\)")
 SAFE_SPLIT_CHARS = ['\n', '。', '！', '？', '.', '!', '?', '、', ',', ';', ' ']
 
@@ -204,6 +208,31 @@ def make_summaryfield_dict(summaries, description_off, url_off, highlight_all=""
     return fields
 
 
+def fit_fields_to_embed_limit(fields, base_length, limit=EMBED_TOTAL_CHAR_LIMIT):
+    """Embed 全体の文字数上限に収まるよう、末尾のフィールドから短縮・除去する。
+
+    fields は重要度順(投稿数の多いトピック順)に並んでいる前提で、
+    影響の小さい末尾側から削る。短縮した箇所には目印を付ける。
+    """
+    def total_length():
+        return base_length + sum(len(f["name"]) + len(f["value"]) for f in fields)
+
+    trimmed = False
+    while fields and total_length() > limit:
+        trimmed = True
+        overflow = total_length() - limit
+        last = fields[-1]
+        keep = len(last["value"]) - overflow - len(_TRUNCATION_MARK)
+        if keep > 20:
+            last["value"] = last["value"][:keep] + _TRUNCATION_MARK
+        else:
+            fields.pop()
+
+    if trimmed:
+        print(f"embed が {limit} 字を超えたため末尾を短縮しました。")
+    return fields
+
+
 def make_embed_payload(summaries, title, graph_png, description_off, url_off,
                        color=0x008f11, highlight_all="",
                        username="chat-digest", avatar_url="", footer=""):
@@ -219,7 +248,8 @@ def make_embed_payload(summaries, title, graph_png, description_off, url_off,
     if graph_png != "":
         embed["image"]["url"] = "attachment://peakgraph"
 
-    embed["fields"] = make_summaryfield_dict(summaries, description_off, url_off, highlight_all)
+    fields = make_summaryfield_dict(summaries, description_off, url_off, highlight_all)
+    embed["fields"] = fit_fields_to_embed_limit(fields, base_length=len(title) + len(footer))
 
     payload_json = {"username": username, "embeds": [embed]}
     if avatar_url:
