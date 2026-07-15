@@ -26,11 +26,15 @@ TOPIC_JUDGE_TEMPLATE = """
 
 
 class TopicPromptCacheTest(unittest.TestCase):
-    def test_model_supports_cache_control_for_supported_gemini_versions(self):
-        self.assertTrue(model_supports_cache_control("gemini-3-flash-preview"))
-        self.assertTrue(model_supports_cache_control("gemini/gemini-3-flash-preview"))
-        self.assertTrue(model_supports_cache_control("gemini-2.5-flash"))
+    def test_model_supports_cache_control_only_for_anthropic(self):
+        # Gemini は LiteLLM の cachedContents 展開によるリクエスト爆発を避けるため
+        # 明示キャッシュを使わない(暗黙キャッシュに任せる)
+        self.assertFalse(model_supports_cache_control("gemini-3-flash-preview"))
+        self.assertFalse(model_supports_cache_control("gemini/gemini-3-flash-preview"))
+        self.assertFalse(model_supports_cache_control("gemini-2.5-flash"))
         self.assertFalse(model_supports_cache_control("gemini-2.0-flash"))
+        self.assertTrue(model_supports_cache_control("claude-sonnet-4-20250514"))
+        self.assertTrue(model_supports_cache_control("anthropic/claude-sonnet-4-20250514"))
 
     def test_split_reconstructs_existing_prompt_exactly(self):
         cached_prefix, suffix, full_prompt = split_topic_judge_user_prompt(
@@ -52,7 +56,7 @@ class TopicPromptCacheTest(unittest.TestCase):
         self.assertIn("主なトピックとその説明", cached_prefix)
         self.assertTrue(suffix.startswith("alice: 前の発言\n"))
 
-    def test_gemini_cache_enabled_moves_system_prompt_into_cached_prefix(self):
+    def test_gemini_cache_request_uses_plain_prompt(self):
         full_prompt, messages = build_topic_judge_prompt_payload(
             model="gemini-3-flash-preview",
             system_prompt="system",
@@ -64,18 +68,10 @@ class TopicPromptCacheTest(unittest.TestCase):
             use_prompt_cache=True,
         )
 
-        self.assertIsNotNone(messages)
-        self.assertEqual(len(messages), 1)
-        self.assertEqual(messages[0]["role"], "user")
-        user_blocks = messages[0]["content"]
-        self.assertEqual(user_blocks[0]["cache_control"], {"type": "ephemeral"})
-        self.assertTrue(user_blocks[0]["text"].startswith("system\n\n"))
-        self.assertEqual(
-            user_blocks[0]["text"].removeprefix("system\n\n") + user_blocks[1]["text"],
-            full_prompt,
-        )
+        self.assertIsNone(messages)
+        self.assertIn("トピックを判定するコメント:target", full_prompt)
 
-    def test_gemini_cacheable_text_matches_cached_message_prefix(self):
+    def test_gemini_cacheable_text_is_none(self):
         cacheable_text = build_topic_judge_cacheable_text(
             model="gemini-3-flash-preview",
             system_prompt="system",
@@ -86,20 +82,8 @@ class TopicPromptCacheTest(unittest.TestCase):
             target_chat="target",
             use_prompt_cache=True,
         )
-        _, messages = build_topic_judge_prompt_payload(
-            model="gemini-3-flash-preview",
-            system_prompt="system",
-            user_template=TOPIC_JUDGE_TEMPLATE,
-            topic_list="topic1: BTC\n",
-            topic_num_plusone=2,
-            former_chats="prev\n",
-            target_chat="target",
-            use_prompt_cache=True,
-        )
 
-        self.assertIsNotNone(messages)
-        self.assertEqual(cacheable_text, messages[0]["content"][0]["text"])
-        self.assertTrue(cacheable_text.startswith("system\n\n"))
+        self.assertIsNone(cacheable_text)
 
     def test_cacheable_text_is_none_when_cache_disabled(self):
         cacheable_text = build_topic_judge_cacheable_text(

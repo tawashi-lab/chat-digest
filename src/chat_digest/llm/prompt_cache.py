@@ -7,13 +7,15 @@ GEMINI_PROMPT_CACHE_MIN_TOKENS = 1024
 
 
 def model_supports_cache_control(model: str) -> bool:
-    if model.startswith(("anthropic/", "claude-")):
-        return True
-    if not is_gemini_model(model):
-        return False
+    """cache_control ブロック(明示キャッシュ)を使ってよいモデルか。
 
-    gemini_model = model.split("/", 1)[1] if model.startswith("gemini/") else model
-    return gemini_model.startswith(("gemini-2.5-", "gemini-3"))
+    Anthropic のみ True。Gemini では LiteLLM が cache_control を cachedContents API の
+    list/create 呼び出しに展開するため、並列判定(数千件×50並列)ではリクエスト数と
+    キャッシュ作成課金が爆発する(実測: 1判定あたり最大10 HTTP リクエスト)。
+    Gemini 2.5/3 は共有プレフィックスに暗黙キャッシュが自動適用されるため、
+    プレーンなプロンプトで送る方が安くて速い。
+    """
+    return model.startswith(("anthropic/", "claude-"))
 
 
 def is_gemini_model(model: str) -> bool:

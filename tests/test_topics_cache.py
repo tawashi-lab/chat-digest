@@ -69,48 +69,37 @@ class GetChatsTopicCacheTest(unittest.TestCase):
         self.assertEqual(topic_id_df.iloc[0]["topic"], "BTC")
         return calls, count_mock
 
-    def test_gemini_3_prompt_cache_stays_enabled(self):
+    def test_gemini_3_prompt_cache_is_disabled(self):
+        # Gemini は LiteLLM の cachedContents リクエスト爆発を避けるため明示キャッシュを
+        # 使わない。トークンカウント(キャッシュ可否判定)も呼ばれない
         calls, count_mock = self._run_get_chats_topic("gemini-3-flash-preview")
 
         self.assertEqual(len(calls), 1)
-        self.assertTrue(calls[0]["use_prompt_cache"])
-        count_mock.assert_called_once()
-
-    def test_gemini_3_prompt_cache_disabled_below_min_tokens(self):
-        calls, count_mock = self._run_get_chats_topic(
-            "gemini-3-flash-preview",
-            token_count=1023,
-        )
-
-        self.assertEqual(len(calls), 1)
         self.assertFalse(calls[0]["use_prompt_cache"])
-        count_mock.assert_called_once()
+        count_mock.assert_not_called()
 
-    def test_gemini_3_prompt_cache_disabled_when_token_count_fails(self):
-        calls, count_mock = self._run_get_chats_topic(
-            "gemini-3-flash-preview",
-            token_count_side_effect=RuntimeError("count failed"),
-        )
-
-        self.assertEqual(len(calls), 1)
-        self.assertFalse(calls[0]["use_prompt_cache"])
-        count_mock.assert_called_once()
-
-    def test_gemini_3_token_count_runs_once_for_multiple_chats(self):
+    def test_gemini_3_multiple_chats_all_plain(self):
         calls, count_mock = self._run_get_chats_topic(
             "gemini-3-flash-preview",
             chat_rows=["alice: BTC の話", "bob: ETH の話", "carol: 相場の話"],
         )
 
         self.assertEqual(len(calls), 3)
-        self.assertTrue(all(call["use_prompt_cache"] for call in calls))
-        count_mock.assert_called_once()
+        self.assertFalse(any(call["use_prompt_cache"] for call in calls))
+        count_mock.assert_not_called()
 
     def test_gemini_20_prompt_cache_is_not_enabled(self):
         calls, count_mock = self._run_get_chats_topic("gemini-2.0-flash")
 
         self.assertEqual(len(calls), 1)
         self.assertFalse(calls[0]["use_prompt_cache"])
+        count_mock.assert_not_called()
+
+    def test_anthropic_prompt_cache_stays_enabled(self):
+        calls, count_mock = self._run_get_chats_topic("claude-sonnet-4-20250514")
+
+        self.assertEqual(len(calls), 1)
+        self.assertTrue(calls[0]["use_prompt_cache"])
         count_mock.assert_not_called()
 
 
