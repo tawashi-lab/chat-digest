@@ -215,7 +215,50 @@ def call_llm_messages(
         raise LLMCallError(f"Unexpected LLM failure for '{resolved_model.request_model}': {exc}") from exc
 
     _log_prompt_cache_usage(response)
+    _track_usage(resolved_model.request_model, response)
     return _extract_text_content(response)
+
+
+# モデル別のトークン使用量トラッカー(1プロセス=1ジョブ実行の集計用)。
+# 利用料の異常をデプロイ後に cron.log から追えるようにする。
+_USAGE_TRACKER: dict[str, dict[str, int]] = {}
+
+
+def reset_usage_tracker() -> None:
+    _USAGE_TRACKER.clear()
+
+
+def _track_usage(model: str, response: Any) -> None:
+    usage = _get_value(response, "usage")
+    if usage is None:
+        return
+    entry = _USAGE_TRACKER.setdefault(
+        model, {"calls": 0, "input": 0, "output": 0, "reasoning": 0}
+    )
+    entry["calls"] += 1
+    entry["input"] += int(_get_value(usage, "prompt_tokens") or 0)
+    entry["output"] += int(_get_value(usage, "completion_tokens") or 0)
+    details = _get_value(usage, "completion_tokens_details")
+    entry["reasoning"] += int(_get_value(details, "reasoning_tokens") or 0)
+
+
+def track_embedding_usage(model: str, inputs: list[str]) -> None:
+    """embedding は API がトークン数を返さないため文字数からの概算で記録する。"""
+    entry = _USAGE_TRACKER.setdefault(
+        model, {"calls": 0, "input": 0, "output": 0, "reasoning": 0}
+    )
+    entry["calls"] += 1
+    entry["input"] += sum(len(text) for text in inputs) // 3
+
+
+def usage_summary_lines() -> list[str]:
+    lines = []
+    for model, e in sorted(_USAGE_TRACKER.items()):
+        lines.append(
+            f"{model}: calls={e['calls']} input={e['input']} "
+            f"output={e['output']} reasoning={e['reasoning']}"
+        )
+    return lines
 
 
 def count_gemini_tokens(model: str, text: str) -> int:
@@ -272,6 +315,7 @@ def create_embeddings(model: str, inputs: list[str]) -> list[list[float]]:
                     contents=batch,
                 )
                 embeddings.extend(list(item.values) for item in response.embeddings)
+            track_embedding_usage(resolved_model.request_model, inputs)
             return embeddings
 
         if resolved_model.provider == "openai":
@@ -279,6 +323,7 @@ def create_embeddings(model: str, inputs: list[str]) -> list[list[float]]:
 
             client = openai.Client(api_key=os.getenv(_PROVIDER_ENV_VARS["openai"]))
             response = client.embeddings.create(input=inputs, model=resolved_model.model_name)
+            track_embedding_usage(resolved_model.request_model, inputs)
             return [item.embedding for item in response.data]
     except LLMCallError:
         raise

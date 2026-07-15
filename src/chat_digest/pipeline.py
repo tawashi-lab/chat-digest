@@ -27,7 +27,7 @@ from chat_digest.analysis.topics import (
     vote_topics,
 )
 from chat_digest.config import AppConfig
-from chat_digest.llm.client import configure_llm
+from chat_digest.llm.client import configure_llm, reset_usage_tracker, usage_summary_lines
 from chat_digest.output.graph import create_pivot_table, get_peaks_graph, get_peaks_urls
 from chat_digest.output.webhook import (
     make_summary_dicts,
@@ -59,6 +59,27 @@ def run_job(
         raise PipelineError(
             f"Unknown job '{job_name}'. Available: {', '.join(sorted(config.jobs))}"
         )
+    reset_usage_tracker()
+    try:
+        return _run_job(
+            config,
+            job_name,
+            post_to_override=post_to_override,
+            simple_post_to_override=simple_post_to_override,
+        )
+    finally:
+        # 利用料の異常を後から追えるよう、モデル別トークン消費を必ずログに残す
+        for line in usage_summary_lines():
+            print(f"LLM usage [{job_name}]:", line)
+
+
+def _run_job(
+    config: AppConfig,
+    job_name: str,
+    *,
+    post_to_override: list[str] | None = None,
+    simple_post_to_override: list[str] | None = None,
+) -> bool:
     job = config.jobs[job_name]
     models = config.job_models(job_name)
     configure_llm(

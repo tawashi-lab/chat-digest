@@ -209,5 +209,37 @@ class CreateEmbeddingsTest(unittest.TestCase):
         self.assertEqual(create_embeddings("gemini-embedding-2", []), [])
 
 
+class UsageTrackerTest(unittest.TestCase):
+    def test_tracks_chat_and_embedding_usage(self):
+        from chat_digest.llm import client
+
+        client.reset_usage_tracker()
+        response = SimpleNamespace(
+            usage=SimpleNamespace(
+                prompt_tokens=100,
+                completion_tokens=10,
+                completion_tokens_details=SimpleNamespace(reasoning_tokens=7),
+            )
+        )
+        client._track_usage("gemini/gemini-3-flash-preview", response)
+        client._track_usage("gemini/gemini-3-flash-preview", response)
+        client.track_embedding_usage("gemini/gemini-embedding-2", ["abcdef" * 10])
+
+        lines = client.usage_summary_lines()
+        self.assertEqual(len(lines), 2)
+        self.assertIn("gemini/gemini-3-flash-preview: calls=2 input=200 output=20 reasoning=14", lines)
+        self.assertTrue(any(line.startswith("gemini/gemini-embedding-2: calls=1 input=20") for line in lines))
+
+        client.reset_usage_tracker()
+        self.assertEqual(client.usage_summary_lines(), [])
+
+    def test_track_usage_ignores_missing_usage(self):
+        from chat_digest.llm import client
+
+        client.reset_usage_tracker()
+        client._track_usage("gemini/gemini-3-flash-preview", SimpleNamespace())
+        self.assertEqual(client.usage_summary_lines(), [])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -170,6 +170,7 @@ def call_topic_judge_llm(
     call_llm_fn: Callable[..., str],
     call_llm_messages_fn: Callable[..., str],
     thinking_level: Optional[str] = None,
+    temperature: Optional[float] = 0.0,
     on_cache_error: Optional[Callable[[Exception], None]] = None,
 ) -> str:
     if cache_messages is not None:
@@ -177,6 +178,8 @@ def call_topic_judge_llm(
             message_kwargs = {"model": model, "messages": cache_messages}
             if thinking_level is not None:
                 message_kwargs["thinking_level"] = thinking_level
+            if temperature is not None:
+                message_kwargs["temperature"] = temperature
             return call_llm_messages_fn(**message_kwargs)
         except Exception as exc:
             if on_cache_error is not None:
@@ -189,4 +192,6 @@ def call_topic_judge_llm(
     }
     if thinking_level is not None:
         plain_kwargs["thinking_level"] = thinking_level
+    if temperature is not None:
+        plain_kwargs["temperature"] = temperature
     return call_llm_fn(**plain_kwargs)
